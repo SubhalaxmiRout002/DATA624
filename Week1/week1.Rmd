@@ -1,0 +1,200 @@
+---
+title: "Time Serise Graphic and Decomposition"
+author: "Subhalaxmi Rout"
+date: "06/14/2021"
+output:
+  word_document: default
+  html_document: default
+subtitle: Week1 homework
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
+library(fpp2)
+library(tsibble)
+```
+
+### Forecasting: Principles and Practices (Chapter 2 - Time serise graphics)
+
+#### 2.1
+
+Use the help function to explore what the series gold, woolyrnq and gas represent.
+
+**$(a)$ Use autoplot() to plot each of these in separate plots.**
+
+```{r}
+?gold
+?woolyrnq
+?gas
+```
+
+```{r}
+autoplot(gold)
+autoplot(woolyrnq)
+autoplot(gas)
+```
+
+**$(b)$ What is the frequency of each series? Hint: apply the frequency() function.**
+
+```{r}
+paste0("Frequency of gold serise: ", frequency(gold)) 
+paste0("Frequency of woolyrnq serise: ", frequency(woolyrnq))
+paste0("Frequency of gas serise: ", frequency(gas))
+```
+
+
+**$(c)$ Use which.max() to spot the outlier in the gold series. Which observation was it?**
+
+```{r}
+which.max(gold)
+```
+
+The observation is 770. 
+
+#### 2.3
+
+Download some monthly Australian retail data from the book website. These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file.
+
+**$(a)$ You can read the data into R with the following script:**
+
+```{r}
+retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+head(names(retaildata))
+```
+
+The second argument (skip=1) is required because the Excel sheet has two header rows.
+
+**$(b)$ Select one of the time series as follows (but replace the column name with your own chosen column):**
+
+```{r}
+myts <- ts(retaildata[,"A3349627V"],
+  frequency=12, start=c(1982,4))
+
+```
+
+**$(c)$ Explore your chosen retail time series using the following functions:**
+
+**autoplot(), ggseasonplot(), ggsubseriesplot(), gglagplot(), ggAcf()**
+
+**Can you spot any seasonality, cyclicity and trend? What do you learn about the series?**
+
+```{r}
+autoplot(myts)
+```
+
+The plot shows seasonality and a upward trend.
+
+```{r}
+ggseasonplot(myts) + ggtitle("Seasonal plot: retail sales")
+```
+
+The seasonal plot shows the there is a large jump in sales in December. The graph also shows that the sales decrease in February and increase in March.
+
+```{r}
+ggsubseriesplot(myts) + ggtitle("Seasonal subseries plot: retail sales")
+```
+
+The plot shows higher sales in December, February has low sales compared to other months. 
+
+```{r, fig.height = 5}
+gglagplot(myts, lags = 30)
+```
+
+Here the colours indicate the months. All other lags have positive corelation but the relationship is strongly positive at lags 12 and lag 24.
+
+```{r}
+ggAcf(myts, lag = 48) 
+```
+
+The slow decrease in the ACF as the lags increase is due to the trend, while the scalloped shape is due the seasonality. 
+
+### Forecasting: Principles and Practices (Chapter 6 - Time serise Decomposition)
+
+#### 6.2
+
+**The plastics data set consists of the monthly sales (in thousands) of product A for a plastics manufacturer for five years.**
+
+**$(a)$ Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?**
+
+```{r}
+autoplot(plastics)
+```
+
+The plot shows the seasonality and a upward trend. 
+
+**$(b)$ Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.**
+
+```{r, fig.height=5}
+plastics %>% decompose(type="multiplicative") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Classical multiplicative decomposition
+    of plastic sales")
+```
+
+**$(c)$ Do the results support the graphical interpretation from part a?**
+
+Yes, the result support the graphical interpretation, above decomposition graph shows the trend, seasonal, and remainder. 
+
+**$(d)$ Compute and plot the seasonally adjusted data.**
+
+```{r}
+dcomp <- plastics %>% decompose(type="multiplicative")
+adjusted_seasonality <- plastics / dcomp$seasonal
+
+autoplot(plastics, series = 'Data') +
+    autolayer(adjusted_seasonality, series = 'Seasonality Adjusted') +
+  labs(y = "Sales", x = "Year", 
+       title = "Plastic sales", color = 'Serise') +
+  scale_color_manual(name="Series", 
+                        values = c("Data"="gray50", 
+                                   "Seasonality Adjusted"="steelblue"))
+```
+
+**$(e)$ Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?**
+
+```{r}
+plastics2 <- plastics
+plastics2[15] <- plastics2[15] + 500
+
+dcomp2 <- plastics2 %>% decompose(type="multiplicative")
+adjusted_seasonality2 <- plastics2 / dcomp2$seasonal
+
+autoplot(plastics, series = 'Data') +
+    autolayer(adjusted_seasonality2, series = 'Seasonality Adjusted') +
+  labs(y = "Sales", x = "Year", 
+       title = "Plastic sales", color = 'Serise') +
+  scale_color_manual(name="Series", 
+                        values = c("Data"="gray50", 
+                                   "Seasonality Adjusted"="steelblue"))
+```
+
+The outlier has major impact on the plot. The sesonality adjusted line structure has changed.  
+
+**$(f)$ Does it make any difference if the outlier is near the end rather than in the middle of the time series?**
+
+```{r}
+plastics3 <- plastics
+plastics3[60] <- plastics3[60] + 500
+
+dcomp3 <- plastics3 %>% decompose(type="multiplicative")
+adjusted_seasonality3 <- plastics3 / dcomp3$seasonal
+
+autoplot(plastics, series = 'Data') +
+    autolayer(adjusted_seasonality3, series = 'Seasonality Adjusted') +
+  labs(y = "Sales", x = "Year", 
+       title = "Plastic sales") +
+  scale_color_manual(name="Series", 
+                        values = c("Data"="gray50", 
+                                   "Seasonality Adjusted"="steelblue"))
+  
+```
+
+We can see the outlier effect in the plot but at the end. The seasonality-adjusted line looks smooth, with not much variation in the line. 
+
