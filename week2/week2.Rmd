@@ -1,0 +1,330 @@
+---
+title: "Data Pre-Processing and Exponential Smoothing"
+author: "Subhalaxmi Rout"
+date: "06/14/2021"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+subtitle: Week2 homework
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
+library(fpp2)
+library(mlbench)
+library(psych) # skew
+library(corrplot) # correlation
+library(PerformanceAnalytics) # correlation and histogram
+library(DataExplorer) # histogram
+library(VIM) # kNN impute
+library(caret) # near zero variance
+library(dplyr) # arrange
+library(tidyr) # gather
+
+```
+
+### Forecasting: Principles and Practices (Chapter 7 - Exponential smoothing)
+
+#### 7.1
+
+Consider the pigs series — the number of pigs slaughtered in Victoria each month.
+
+**$(a)$ Use the ses() function in R to find the optimal values of**  
+**$\alpha$ and  $\l_0$, and generate forecasts for the next four months.**
+
+```{r}
+model = ses(pigs)
+
+fc <- model %>%
+  forecast(h = 4)
+
+summary(fc)
+
+```
+
+The optimal value of alpha = 0.2971 and Initial states = 77260.0561.
+
+```{r}
+autoplot(fc, series = "Data") +
+  autolayer(fc$fitted, series="Fitted") +
+  labs(y="# pigs", title="Pigs slaughtered in Victoria each month ", color = "Serise") +
+  scale_color_manual(name="Series", 
+                        values = c("Data"="gray50", 
+                                   "Fitted"="orange"))
+```
+
+**$(b)$ Compute a 95% prediction interval for the first forecast using**  
+**$\hat{y} ± 1.96s$ where  s is the standard deviation of the residuals. Compare** **your interval with the interval produced by R.**
+
+```{r}
+forecast <- 98816.41
+s <- sd(fc$residuals)
+y1 <-  forecast - 1.96 * s
+print(y1)
+y2 <-  forecast + 1.96 * s
+print(y2)
+```
+
+95% prediction interval for the first forecast = (78679.97, 118952.8)
+
+#### 7.2
+
+**Write your own function to implement simple exponential smoothing. The function should take arguments y (the time series), alpha (the smoothing parameter**  
+**α) and level (the initial level $\l_0$). It should return the forecast of the next observation in the series. Does it give the same forecast as ses()?**
+
+To answer this question follow below approach:
+
+* First create own time series
+* apply `ses()` to calculate alpha, and initial value i.e l
+* create own simple exponential smoothing function 
+* Pass time series, alpha, and l as parameters
+* compare forecast value by using `ses()` and own created `my_ses()`
+
+```{r}
+# time serise
+myts <- ts(c(10,12,13, 14, 15, 2, 8, 36, 28, 12, 16, 22, 26, 23, 34, 11, 18, 19, 24, 5), frequency = 1)
+
+# forecast for next observation
+fc <- ses(myts) %>% forecast::forecast(h = 1)
+
+# calculate alpha and l value
+alpha <- fc$model$par[1]
+print(alpha)
+l <- fc$model$par[2]
+print(l)
+
+```
+
+Created own ses function named `my_ses`. Pass the parameters to see the forecast and compair the result. 
+
+```{r}
+my_ses <- function(ts = myts, alpha = alpha, l = l){
+  forecast <- l
+  for(i in 1:length(myts)){
+   forecast <- alpha*myts[i] + (1 - alpha)*forecast 
+  }
+  paste0("Forecast of next observation : ", forecast)
+}
+
+# user defined function
+my_ses(ts = myts, alpha = alpha, l = l)
+
+# Pre-defined function
+fc
+```
+
+Yes, `my_ses()` function gives the same result as the `ses()`. 
+
+#### 7.3
+
+**Modify your function from the previous exercise to return the sum of squared errors rather than the forecast of the next observation. Then use the optim() function to find the optimal values of $\alpha$ and $\l_0$. Do you get the same values as the ses() function?**
+
+```{r}
+#myts
+
+my_ses_err <- function(par = c(alpha, l), ts){
+  err <- 0
+  sse <- 0
+  alpha <- par[1]
+  l <- par[2]
+  forecast <- l
+  
+  for(i in 1:length(ts)){
+    err <- ts[i] - forecast
+    sse <- sse + err ** 2
+    
+    forecast <- alpha*ts[i] + (1 - alpha)*forecast 
+  }
+  
+  return(sse)
+
+}
+
+optimal_value <- optim(par = c(0.5, myts[1]), ts = myts, fn = my_ses_err)
+
+paste0("Optimal value of alpha : ", optimal_value$par[1])
+paste0("Optimal value of l : ", optimal_value$par[2])
+
+```
+
+Optimal value of alpha and l using `ses()`.
+
+```{r}
+paste0("Optimal value of alpha using ses() : ", fc$model$par[1])
+paste0("Optimal value of l using ses() : ", fc$model$par[2])
+```
+
+The alpha value lies between 0 and 1 so anything below zero considers as 0. using `my_ses_err()` gets negative alpha values i.e zero. From `ses()` alpha value almost zero. The different optimal value getting for l. 
+
+Get alpha value almost same but different l value. 
+
+### Applied predictive modeling (Chapter 3 - Data Pre-processing)
+
+#### 3.1 
+
+The UC Irvine Machine Learning Repository$^6$ contains a data set related
+to glass identification. The data consist of 214 glass samples labeled as one
+of seven class categories. There are nine predictors, including the refractive
+index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
+The data can be accessed via: library(mlbench)
+
+**$(a)$ Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.**
+
+```{r}
+data("Glass")
+str(Glass)
+```
+
+Remove the target variable `Type` from the Glass dataset named as data. Visualize the distribution and relationship between predictors by histogram and correlation plot. 
+
+```{r}
+
+# remove traget variable
+data <- Glass[, -10]
+
+# corelation of predictors
+corrplot(cor(data), type="lower", order="hclust", mar=c(0,0,1,0)) + title("correlation plot of predictor variables")
+
+# histogram of predictors
+plot_histogram(data, 
+               geom_histogram_args = list(bins = 30L), 
+               title = "Histogram of predictor variables",
+               nrow = 3L,
+               ncol = 3L)
+
+# correlation and distribution of predictors
+chart.Correlation(data, histogram = TRUE, method = "pearson")
+```
+
+The correlation plot shows:
+
+* very high positive relationship between Ca and RI
+* RI and Si, and Mg and Al have negative relationship
+* Al and Ba positively correlate with each other
+
+Histogram shows:
+
+* Ba, Fe, K  completely right tail skewed distribution
+* RI, and Ca have slightly right tail skewed 
+* Mg has 2 peaks, mostly left tail skewed
+* Na, Al, and Si looks symmetrical 
+
+**Do there appear to be any outliers in the data? Are any predictors skewed?**
+
+Yes, outliers are present in the data. Below box-plor shoes the outliers of predictor. 
+
+```{r}
+boxplot(data, main = "Boxplot of predictors")
+```
+Above histogram shows predictors are skewed. To verify lets have a look on skewness. If the predictor distribution is roughly symmetric, the skewness values will be close to zero. As the distribution becomes more right skewed, the skewness statistic becomes larger. Similarly, as the distribution becomes more left skewed, the value becomes negative.
+
+```{r}
+skewValues <- apply(data, 2, skew)
+skewValues
+```
+
+Skewvalue shows the same result that we get from histogram. 
+
+**$(c)$ Are there any relevant transformations of one or more predictors that might improve the classification model?**
+
+Most of the predictors are skewed and having outliers, we can perform box-cox or Scaling and Centering transformation on each predictor variable might improve the model classification. 
+
+#### 3.2
+
+**The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.**
+
+**$(a)$ Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?**
+
+```{r}
+data("Soybean")
+str(Soybean)
+```
+
+Soybean dataset have 35 predictor variables and 1 target variable. Below histogram shows the distribution of the categorical predictors.
+
+```{r, fig.width=10, fig.height=10, results='asis'}
+Soybean %>%
+  gather(variable, level) %>%
+  ggplot(aes(x = level)) +
+  geom_bar(fill = 'steelblue') + 
+  xlab("Frequency of Level Occurrence") +
+  facet_wrap(~variable, scales = 'free')
+```
+
+`nearZeroVar` function could be used to find the degenrate variables for Soybean dataset. 
+
+```{r}
+nzero <- nearZeroVar(Soybean)
+names(Soybean)[nzero]
+```
+
+There are 3 predictors "leaf.mild" "mycelium"  "sclerotia" have non zero variance. It would be better too remove these variables from the model. 
+
+**$(b)$ Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?**
+
+```{r}
+visdat::vis_miss(Soybean, sort_miss = TRUE)
+```
+
+Total 9.5% of data having NAs. Top 5 variables have high missing values are : 'hail': 17.72%, 'sever':17.72%, 'seed.tmt': 17.72%, 'lodging':17.72% and 'germ':16.4%.
+
+```{r}
+Soybean %>% filter_all(any_vars(is.na(.))) %>%
+  group_by(Class) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count))
+```
+
+`phytophthora-rot` class has high number of  NA's. 
+
+**$(c)$ Develop a strategy for handling missing data, either by eliminating predictors or imputation.**
+
+We would prefer to Eliminate predictors if the NA'S has more than 90%. In this dataset, most of the NA'S lies below 20%. We would go with the KNN imputation. The K value that we are decide to apply is 20 (~ close to square root of number of observationa). To perform this use `VIM` pacakge. We can see after apply kNN() there are some additional variables added to the data. Remove all additional variables. 
+
+```{r}
+Soybean_impute <- kNN(data = Soybean, k = 26)
+```
+
+```{r}
+Soybean_impute <- subset(Soybean_impute, select = -c(Class_imp:roots_imp))
+head(Soybean_impute)
+```
+```{r}
+colSums(is.na(Soybean_impute))
+```
+
+Few colums still have NAs, most of the variable are factor. Impute mode for the remaining missing values. Missing value columns are, plant.stand , precip, temp, germ, and leaf.size. 
+
+```{r}
+mode <- function(df, ...) {
+  tb <- table(df)
+  which(tb == max(tb)) %>% sort %>% `[`(., 1) %>% names
+}
+
+impute <- function(df, fun) {
+  fval <- fun(df, na.rm = TRUE)
+  y <- ifelse(is.na(df), fval, df)
+  return(y)
+}
+
+Soybean_impute_2 <- Soybean_impute %>% 
+  mutate(
+    plant.stand = impute(plant.stand, mode),
+    precip     = impute(precip, mode),
+    temp = impute(temp, mode),
+    germ = impute(germ, mode),
+    leaf.size = impute(leaf.size, mode)
+    ) %>% 
+  mutate_if(is.factor, as.numeric)
+
+visdat::vis_miss(Soybean_impute_2)
+```
