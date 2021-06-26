@@ -1,0 +1,633 @@
+---
+title: "Project 1 - Group 4"
+author: "Subhalaxmi Rout"
+date: "06/21/2021"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+subtitle: Week4 homework
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+### Load library
+
+Loaded all necessary libraries. 
+
+```{r}
+library(readxl) # read excel
+library(dplyr) # mutate
+library(PerformanceAnalytics) #  correlation and histogram
+library(ggplot2) # ggplot
+library(forecast) # autoplot
+library(imputeTS) # impute NAs
+library(tseries) 
+library(writexl) # excel
+```
+
+We have a dataset in excel file, first read the data using read_csv(), and have a look on the staucture of data by glimpse function. 
+
+```{r}
+data <- readxl::read_excel('./Data Set for Class.xls')
+data <- data %>% arrange(SeriesInd)
+glimpse(data)
+```
+
+Dataset have 10,572 rows and 7 columns. To get more clarity added Date column using SeriesInd column. 
+
+```{r}
+#data <- data %>% dplyr::mutate(Date = as.Date(SeriesInd))
+head(data)
+```
+
+### Exploratory Data Analysis
+
+There are total 6 groups, split the data into 6 datasets based on sub_group. Created another column as date, convert SeriesInd to date.
+
+```{r}
+data_01 <- data %>% filter(group == 'S01') 
+data_02 <- data %>% filter(group == 'S02') 
+data_03 <- data %>% filter(group == 'S03') 
+data_04 <- data %>% filter(group == 'S04') 
+data_05 <- data %>% filter(group == 'S05') 
+data_06 <- data %>% filter(group == 'S06') 
+
+
+data_02 <- data_02 %>% select(c(SeriesInd, Var02, Var03)) %>% mutate(date = as.Date(SeriesInd, origin = '1898-08-30'))
+data_06 <- data_06 %>% select(c(SeriesInd, Var05, Var07)) %>% mutate(date = as.Date(SeriesInd, origin = '1898-08-30'))
+
+
+print(head(data_02))
+print(head(data_06))
+```
+
+### S02 – Forecast  Var02, Var03
+
+A dataset was provided with 1762 records and 3 variables. 1622 rows among the total 1762 rows had values for the variables and were meant to be used to train models while rest 140 records would be used for predicting the values using the models.
+
+In the next set of plots, we will see the data distribution for S02 along with Var02 and Var03. This dataset looks like Ford stock data. There are missing value available for for S02, lets clean the data. 
+
+#### Check missing values
+
+Total 144 rows have NAs, out of that 140 we will do forecast and rest 4 rows impute the values for NA. 
+
+```{r}
+data_02[!complete.cases(data_02),]
+```
+
+#### Subset of Var02, Var 03
+
+Get the subsets Var02 and Var03.`data_02` has all NA from row 43022. Last 140 rows have NAs, to do forecast we will need to drop those NA values.
+
+```{r}
+data_s02_v2 <-  data_02 %>% filter(SeriesInd <= 43021) %>% select(date, Var02)
+data_s02_v3 <- data_02 %>% filter(SeriesInd <= 43021) %>% select(date, Var03)
+
+summary(data_s02_v2)
+summary(data_s02_v3)
+```
+
+Summary shows, Var02 mean value very higher than Median value may be due to presenece of outlier. In Var03 mean and median almost same. Var02 has no missing data but Var03 has 4 missing datapoints.  
+
+##### Impute Missing Data 
+
+Impute the NAs using `na_interpolation` from package imputeTS. 
+
+```{r}
+library(imputeTS)
+data_s02_v3 <- imputeTS::na_interpolation(data_s02_v3)
+summary(data_s02_v3)
+```
+
+#### Convert data to Time series
+
+Apply time series on data_s02_v2, and data_s02_v3. The data looks daily stocks of ford, we are keeping frequency = 365. 
+
+```{r}
+data_s02_v2 <- ts(data_s02_v2$Var02, start = 2010, frequency = 365)
+str(data_s02_v2)
+
+```
+
+```{r}
+data_s02_v3 <- ts(data_s02_v3$Var03, start = 2010, frequency = 365)
+str(data_s02_v3)
+```
+
+#### Time Series Exploration
+
+Below plots shows the distribution, outliers and trend present in time series.
+
+```{r}
+autoplot(data_s02_v2) + 
+   geom_line( color="#69b3a2", show.legend = FALSE) + ylab("") +
+  ggtitle("Var 02")
+
+autoplot(data_s02_v3) +
+  geom_line(color="#E69F00", show.legend = FALSE) + ylab("") +
+  ggtitle("Var 03")
+```
+
+Var02 shows downward trend mutiple outliers. Var03 may be cyclical and has one outlier.
+
+```{r}
+ggplot(data_s02_v2, aes(data_s02_v2)) + 
+  geom_histogram(bins=30, fill = "#E69F00") + xlab("") +
+    labs(title = "Histogram of S02 by Var02")
+
+ggplot(data_s02_v3, aes(data_s02_v3)) +
+  geom_histogram(bins=15, fill = "#69b3a2") + xlab("") +
+    labs(title = "Histogram of S02 by Var03")
+
+```
+
+Var02 is unimodal but skewed towards right. Var03 looks nearly normal. Both variables have outliers.
+
+```{r}
+par(mfrow = c(2, 1))
+ggplot(data_s02_v2, aes(data_s02_v2)) + geom_boxplot(col = "#E69F00") + coord_flip() +
+  labs(title = "Boxplot of S02 by Var02") + xlab("Var 02")
+
+ggplot(data_s02_v3, aes(data_s02_v3)) + geom_boxplot(col = "#69b3a2") + coord_flip() +
+  labs(title = "Boxplot of S02 by Var03") + xlab("Var 03")
+```
+
+Some variables have  few outliers, which could strongly impacted the model. We use `forecast::tsclean()` to return a cleaned version of a time series with outliers and missing values replaced by estimated values.
+
+We will fix outlier using the forecast package.
+
+```{r}
+data_s02_v2 <- tsclean(data_s02_v2)
+
+autoplot(data_s02_v2) +
+  geom_line( color="#E69F00", show.legend = FALSE) +
+  ylab("Var02")
+
+data_s02_v3 <- tsclean(data_s02_v3)
+
+autoplot(data_s02_v3) +
+  geom_line( color="#69b3a2", show.legend = FALSE) +
+  ylab("Var03")
+
+```
+
+#### Stationarity check
+
+Dataset `data_s02_v2` have trend, ACF slowing reducing and PACF shows significant critical value at lag 0. Data looks non-stationary.
+Dataset `data_s02_v3`, ACF slowing reducing due to trend and PACF shows significant critical value at lag 0. Due is presence of trend  data is not stationary.
+
+```{r}
+ggtsdisplay(data_s02_v2, main="Group S02 - Var 02", ylab="Var02")
+ggtsdisplay(data_s02_v3, main="Group S02 - Var 03", ylab="Var03")
+```
+
+Need to apply differencing to make these datasets stationary. 
+
+```{r}
+print(ndiffs(data_s02_v2))
+print(ndiffs(data_s02_v3))
+```
+
+It shows number of differences required for a stationary series is 1.
+
+```{r}
+data_s02_v2 %>% diff() %>% ggtsdisplay(main="Group S02 - Var 02", ylab="Var02", lag.max = 30)
+data_s02_v2_diff <- data_s02_v2 %>% diff()
+```
+
+The differencing of the data has now made it stationary. In ACF plot there is a significant spike at lag 0.
+
+```{r}
+data_s02_v3 %>% diff() %>% ggtsdisplay(main="Group S02 - Var 03", ylab="Var03", lag.max = 30)
+data_s02_v3_diff <- data_s02_v3 %>% diff()
+```
+
+The differencing of the data has now made it stationary. In ACF plot there is a significant spike at lag 0. 
+
+Perform ugmented Dickey-Fuller Test to check the stationary of the data, if the p-value is less than 0.05 then data is stationary. 
+
+```{r}
+tseries::adf.test(data_s02_v2_diff)
+tseries::adf.test(data_s02_v3_diff)
+```
+
+P-value is < 0.05, hence after differencing data became stationary. 
+
+#### Train and Test split
+
+Split the data in to train aand test set, train contains 80% of the data, and test contains 20% of the data.
+
+```{r}
+
+data_s02_v2_train <- ts(data_s02_v2[1: floor(length(data_s02_v2)*0.8)], frequency = 365)
+data_s02_v2_test <- length(data_s02_v2) - floor(length(data_s02_v2)*0.8)
+
+data_s02_v2_test_ts <- ts(data_s02_v2[floor(length(data_s02_v2)*0.8 + 1):length(data_s02_v2)], frequency = 365)
+
+
+data_s02_v3_train <- ts(data_s02_v3[1: floor(length(data_s02_v3)*0.8)], frequency = 365)
+data_s02_v3_test <- length(data_s02_v3) - floor(length(data_s02_v3)*0.8)
+
+data_s02_v3_test_ts <- ts(data_s02_v3[floor(length(data_s02_v3)*0.8 + 1):length(data_s02_v3)], frequency = 365)
+
+```
+
+#### Modeling Group - S02
+
+Created 2 models : 
+
+* Arima
+* ETS
+
+#### Arima Model 
+
+Apply Arima model on Var02 and Var03. From ACF and PCAF for Var02  model seems like ARIMA(1,1,1) or ARIMA(0,1,0) or ARIMA(0,1,1). Similary, for Var03 model seems like ARIMA(1,1,1) or ARIMA(7,1,7).
+
+Arima for Var02
+
+```{r}
+#fit_arima_s02_v2 <- data_s02_v3_train %>% auto.arima(stepwise = FALSE)
+fit_arima_s02_v2 <- data_s02_v2_train %>% Arima(order = c(0,1,1), seasonal = c(0,1,0))
+summary(fit_arima_s02_v2)
+```
+
+Arima for Var03
+
+```{r}
+#fit_arima_s02_v3 <- data_s02_v3_train %>% auto.arima(stepwise = FALSE)
+fit_arima_s02_v3 <- data_s02_v3_train %>% Arima(order = c(1,1,1), seasonal = c(0,1,0))
+summary(fit_arima_s02_v3)
+```
+
+Arima var02 test
+
+```{r}
+farima_s02_v02 <-  forecast(fit_arima_s02_v2, data_s02_v2_test)
+predictions_test <- ts(farima_s02_v02$mean,  frequency = 365)
+
+data_s02_v2_test_ts %>% autoplot(series = "Actuals") + 
+  autolayer(predictions_test)
+
+forecast::accuracy(as.numeric((farima_s02_v02$mean)),as.numeric((data_s02_v2_test_ts)))
+
+```
+
+Arima var03 test
+
+```{r}
+farima_s02_v03 <- forecast(fit_arima_s02_v3, data_s02_v3_test)
+predictions_test_v03 <- ts(farima_s02_v03$mean,  frequency = 365)
+
+data_s02_v3_test_ts %>% autoplot(series = "Actuals") + 
+  autolayer(predictions_test_v03)
+
+forecast::accuracy(as.numeric((farima_s02_v03$mean)),as.numeric((data_s02_v3_test_ts)))
+```
+
+#### ETS Model
+
+Fit ETS model on train data and forecast using test data for Var02 and Var03. 
+
+```{r}
+fets_s02_v02 <- data_s02_v2_train %>% ets() %>% 
+  forecast(h = data_s02_v2_test)
+fets_s02_v03 <- data_s02_v3_train %>% ets() %>% 
+  forecast(h = data_s02_v3_test)
+
+
+forecast::accuracy(fets_s02_v02,data_s02_v2_test)["Test set", ]
+forecast::accuracy(fets_s02_v03,data_s02_v3_test)["Test set", ]
+
+```
+
+Comparing ARIMA and ETS models, for Var02 and Var03 ARIMA performed better than ETS.
+
+Predict n = 140 using ARIMA model. 
+
+```{r}
+final_forecast_v02 <- data_s02_v2 %>% Arima(order = c(0,1,1), seasonal = c(0,1,0)) %>%
+  forecast(h = 140)
+final_forecast_v02 %>% autoplot()
+
+final_forecast_v03 <- data_s02_v3 %>% Arima(order = c(1,1,1), seasonal = c(0,1,0)) %>%
+  forecast(h = 140)
+final_forecast_v03 %>% autoplot()
+
+```
+
+#### Check residuals
+
+```{r}
+checkresiduals(farima_s02_v02, test = F)
+```
+
+Residuals shows the model is a good fit or not, if the residuals are white noise then then we can consider a model is a good fit. We use `forecast::checkresiduals()` to know about model fit. Mainly we consider below points for the model fit, 
+
+**Residual Plots**
+This plot should be a random walk. 
+
+**Residual histograms**
+The residuals of the model seem to better follow a normal distribution.
+
+**ACF plots**
+The residuals of the model are less autocorrelated. More lags stays inside the 95% confidence interval better for the model. 
+
+
+```{r}
+checkresiduals(farima_s02_v03, test = F)
+```
+
+Above the residual plots, shows it’s a random walk. On ACF, autocorrelation values are larger at some lags. This means there is relationships between the lags. The histogram shows that the residuals are normally distributed.  This model is may not be the best fit model, in ARIMA it's harder to get the best fit model. We use this model for our forecast. 
+
+#### Export to excel
+
+Export forecast for Var02 and Var03 to excel using `write_xlsx()` from writexl package. 
+
+```{r}
+writexl::write_xlsx(data.frame(final_forecast_v02$mean), "S02_v2.xlsx")
+writexl::write_xlsx(data.frame(final_forecast_v03$mean), "S02_v3.xlsx")
+```
+
+### S06 – Forecast  Var05, Var06
+
+Use dataset `data_06`, this dataset belongs to group S06. 
+
+A dataset was provided with 1762 records and 3 variables. 1622 rows among the total 1762 rows had values for the variables and were meant to be used to train models while rest 140 records would be used for predicting the values using the models.
+
+In the next set of plots, we will see the data distribution for S06 along with Var05 and Var07.
+
+#### Missing Value Check
+
+Total 145 rows have NAs, to do forecast we will need to drop 140 rows and rest 5 rows impute values for NA.
+
+```{r}
+data_06[!complete.cases(data_06),]
+```
+
+#### Subset of Var05, Var 07
+
+Get the subsets Var05 and Var07. The data_02 has all NA from row 43022.
+
+```{r}
+data_s06_v5 <-  data_06 %>% filter(SeriesInd <= 43021) %>% select(date, Var05)
+data_s06_v7 <- data_06 %>% filter(SeriesInd <= 43021) %>% select(date, Var07)
+
+summary(data_s06_v5)
+summary(data_s06_v7)
+```
+
+Both variables summary shows 5 NAs and, mean and median does not show larger difference.
+
+#### Impute Missing Data
+
+Impute NAs using na_interpolation() from package imputeTS.
+
+```{r}
+
+data_s06_v5 <- imputeTS::na_interpolation(data_s06_v5)
+summary(data_s06_v5)
+
+data_s06_v7 <- imputeTS::na_interpolation(data_s06_v7)
+summary(data_s06_v7)
+```
+
+#### Convert dataset to Time series
+
+Apply time series on data_s06_v5, and data_s06_v7. The data looks daily stock price, frequency = 365.
+
+```{r}
+data_s06_v5 <- ts(data_s06_v5$Var05, start = 2010, frequency = 365)
+str(data_s06_v5)
+
+data_s06_v7 <- ts(data_s06_v7$Var07, start = 2010, frequency = 365)
+str(data_s06_v7)
+
+```
+
+#### Time Series Exploration
+
+Below plots shows the distribution, outliers and trend present in time series.
+
+```{r}
+
+autoplot(data_s06_v5) +
+   geom_line( color="#69b3a2", show.legend = FALSE) + ylab("") +
+  ggtitle("Var 05")
+
+autoplot(data_s06_v7) +
+  geom_line(color="#E69F00", show.legend = FALSE) + ylab("") +
+  ggtitle("Var 07")
+```
+
+Var05 and Var07 both show an upward trend and one outlier. The trend is available in both series.
+
+```{r}
+ggplot(data_s06_v5, aes(data_s06_v5)) +
+  geom_histogram(bins=20, fill = "#E69F00") + xlab("") +
+    labs(title = "Histogram of S06 by Var05")
+
+ggplot(data_s06_v7, aes(data_s06_v5)) +
+  geom_histogram(bins=20, fill = "#69b3a2") + xlab("") +
+    labs(title = "Histogram of S06 by Var07")
+
+```
+
+Distribution is not normal for both the series and presents an outlier towards right. 
+
+```{r}
+ggplot(data_s06_v5, aes(data_s06_v5)) + geom_boxplot(col = "#E69F00") + coord_flip() +
+  labs(title = "Boxplot of S06 by Var05") + xlab("Var 05")
+ggplot(data_s06_v7, aes(data_s06_v7)) + geom_boxplot(col = "#69b3a2") + coord_flip() +
+  labs(title = "Boxplot of S06 by Var07") + xlab("Var 07")
+```
+
+Fix outlier using the forecast package.
+
+```{r}
+data_s06_v5 <- forecast::tsclean(ts(data_s06_v5))
+
+#data_s06_v5[320] <- mean(data_s06_v5)
+
+
+autoplot(data_s06_v5) +
+  geom_line( color="#E69F00", show.legend = FALSE) +
+  ylab("") + ggtitle("Var 05")
+
+data_s06_v7 <- tsclean(ts(data_s06_v7))
+#data_s06_v7[320] <- mean(data_s06_v7)
+
+autoplot(data_s06_v7) +
+  geom_line( color="#69b3a2", show.legend = FALSE) +
+  ylab("") + ggtitle("Var 07")
+```
+
+#### Stationarity check
+
+Timeseries data_s06_v5 have trend, ACF slowing reducing and PACF shows significant critical value at lag 1. Data looks non-stationary. Timeseries data_s06_v7, ACF slowing reducing due to trend and PACF shows significant critical value at lag 1. Due is presence of trend data is not stationary.
+
+```{r}
+ggtsdisplay(data_s06_v5, main="Group S06 - Var 05", ylab="Var05", lag.max = 80)
+ggtsdisplay(data_s06_v7, main="Group S06 - Var 07", ylab="Var07", lag.max = 80)
+```
+
+Need to apply differencing to make these datasets stationary.
+
+```{r}
+print(ndiffs(data_s06_v5))
+print(ndiffs(data_s06_v7))
+```
+
+It shows number of differences required for a stationary series is 1.
+
+```{r}
+data_s06_v5 %>% diff() %>% ggtsdisplay(main="Group S06 - Var 05", ylab="Var05", lag.max = 30)
+data_s06_v5_diff <- data_s06_v5 %>% diff()
+```
+
+Data looks stationary, to confirm we will apply the Augmented Dickey-Fuller Test. ACF and PACF have a significant spike at lag 1. 
+
+```{r}
+data_s06_v7 %>% diff() %>% ggtsdisplay(main="Group S06 - Var 07", ylab="Var07", lag.max = 30)
+data_s06_v7_diff <- data_s06_v7 %>% diff()
+```
+
+ACF and PACF have significant spikes at lag 1. 
+
+```{r}
+tseries::adf.test(data_s06_v5_diff)
+tseries::adf.test(data_s06_v7_diff)
+```
+
+P-value is < 0.05, hence after differencing data became stationary.
+
+#### Train and Test split
+
+Split the series in to train aand test set, train contains 80% of the data, and test contains 20% of the data.
+
+```{r}
+data_s06_v5_train <- ts(data_s06_v5[1: floor(length(data_s06_v5)*0.8)], frequency = 365)
+data_s06_v5_test <- length(data_s06_v5) - floor(length(data_s06_v5)*0.8)
+
+data_s06_v5_test_ts <- ts(data_s06_v5[floor(length(data_s06_v5)*0.8 + 1):length(data_s06_v5)], frequency = 365)
+
+
+data_s06_v7_train <- ts(data_s06_v7[1: floor(length(data_s06_v7)*0.8)], frequency = 365)
+data_s06_v7_test <- length(data_s06_v7) - floor(length(data_s06_v7)*0.8)
+
+data_s06_v7_test_ts <- ts(data_s06_v7[floor(length(data_s06_v7)*0.8 + 1):length(data_s06_v7)], frequency = 365)
+
+```
+
+#### Modeling Group - S06
+
+Created 2 models, Arima and ETS. 
+
+#### Arima Model
+
+Apply ARIMA model on both the time series. From ACF and PCAF for Var05 model seems like ARIMA(1,1,1) or ARIMA(1,1,5). For Var07, P values could be 1,5,15 and D : 1 and Q : 1, 5, 15.
+
+
+##### Arima for Var05
+
+```{r}
+#fit_arima_s06_v5 <- data_s06_v5_train %>% auto.arima(stepwise = FALSE)
+fit_arima_s06_v5 <- data_s06_v5_train %>% Arima(order = c(1,1,1), seasonal = c(0,1,0))
+summary(fit_arima_s06_v5)
+
+```
+
+##### Arima var05 test
+
+```{r}
+farima_s06_v05 <- forecast(fit_arima_s06_v5, data_s06_v5_test)
+
+predictions_test_v05 <- ts(farima_s06_v05$mean,  frequency = 365)
+
+data_s06_v5_test_ts %>% autoplot(series = "Actuals") + 
+  autolayer(predictions_test_v05)
+
+accuracy(as.numeric((farima_s06_v05$mean)),as.numeric((data_s06_v5_test_ts)))
+
+```
+
+##### Arima for Var07
+
+```{r}
+#fit_arima_s06_v7 <- data_s06_v7_train %>% auto.arima(stepwise = FALSE)
+fit_arima_s06_v7 <- data_s06_v7_train %>% Arima(order = c(1,1,1), seasonal = c(0,1,0))
+summary(fit_arima_s06_v7)
+```
+
+##### Arima var07 test
+
+```{r}
+farima_s06_v07 <-  forecast(fit_arima_s06_v7, data_s06_v7_test)
+
+predictions_test_v07 <- ts(farima_s06_v07$mean,  frequency = 365)
+
+data_s06_v7_test_ts %>% autoplot(series = "Actuals") + 
+  autolayer(predictions_test_v07)
+
+accuracy(as.numeric((farima_s06_v07$mean)),as.numeric((data_s06_v7_test_ts)))
+
+```
+
+#### ETS Model
+
+Fit ETS model on train data and forecast using test data for Var05 and Var07.
+
+```{r}
+fets_s06_v05 <- data_s06_v5_train %>% ets() %>%
+  forecast(h = data_s06_v5_test)
+
+fets_s06_v07 <- data_s06_v7_train %>% ets() %>%
+  forecast(h = data_s06_v7_test)
+
+accuracy(fets_s06_v05,data_s06_v5_test)["Test set", ]
+accuracy(fets_s06_v07,data_s06_v7_test)["Test set", ]
+```
+
+Comparing ARIMA and ETS models, for Var05 and Var07 ARIMA performed well.
+
+Predict next 140 rows using ARIMA model.
+
+```{r}
+final_forecast_v05 <- ts(data_s06_v5, start = 2010, frequency = 365) %>% Arima(order = c(1,1,1), seasonal = c(0,1,0)) %>%
+  forecast(h = 140)
+final_forecast_v05 %>% autoplot()
+
+final_forecast_v07 <- ts(data_s06_v7, start = 2010, frequency = 365) %>% Arima(order = c(1,1,1), seasonal = c(0,1,0)) %>%
+  forecast(h = 140)
+final_forecast_v07 %>% autoplot()
+```
+
+#### Check residuals
+
+```{r}
+checkresiduals(farima_s06_v05, test = F)
+```
+
+
+```{r}
+checkresiduals(farima_s06_v07, test = F)
+```
+
+Above the residual plots, shows it’s a random walk. On ACF, autocorrelation values are larger at some lags. This means there is relationships between the lags. The histogram shows that the residuals are normally distributed.
+
+#### Export to excel
+
+Export forecast for Var05 and Var07 to excel using write_xlsx() from writexl package.
+
+```{r}
+writexl::write_xlsx(data.frame(final_forecast_v05$mean), "S06_v5.xlsx")
+writexl::write_xlsx(data.frame(final_forecast_v07$mean), "S06_v7.xlsx")
+```
+
+
